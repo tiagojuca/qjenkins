@@ -246,11 +246,19 @@ pipeline {
     // stage("Analisar") {
 
     //   steps {
+    //     echo "Analise Encoding"
+    //   }
+
+    //   steps {
     //     echo "Analise Estatica"
     //   }
 
     //   steps {
     //     echo "Analise Resources"
+    //   }
+
+    //   steps {
+    //     echo "Analise Coverage"
     //   }
 
     //   script {
