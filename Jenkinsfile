@@ -238,6 +238,8 @@ pipeline {
 
           BUNDLE_PATH_EXEOBJ = "${BUNDLE_OUT_DIR}\\${BUNDLE_NAME_EXEOBJ}"
           BUNDLE_PATH_PDBS = "${BUNDLE_OUT_DIR}\\${BUNDLE_NAME_PDBS}"
+
+          currentBuild.displayName = "r${BUNDLE_BASENAME}"
         }
 
       }
