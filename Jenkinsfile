@@ -1,11 +1,3 @@
-// Necessario aprovar as seguintes assinaturas em
-// Jenkins -> Gerenciar -> Seguranca -> ScriptApproval
-// method hudson.model.Run getCauses
-// method java.time.ZonedDateTime getDayOfWeek
-// method org.jenkinsci.plugins.workflow.support.steps.build.RunWrapper getRawBuild
-// staticMethod java.time.ZoneId of java.lang.String
-// staticMethod java.time.ZonedDateTime now java.time.ZoneId
-
 // Parametros de entrada que nao precisam ser configurados via UI, mudam raramente
 def SVN_BASE_URL = "https://svn.altoqi.com.br/svn/Eberick/"
 def CHECKOUT_FOLDER_PREFIX = "eb"
@@ -17,17 +9,6 @@ def CMAKE_BINARY_DIR = "exeobj_cmake\\VC"
 def OWL_VERSION = "6.42"
 def BUNDLE_OUT_DIR = "D:\\jenkins\\jobs\\${env.JOB_NAME}\\builds\\${env.BUILD_NUMBER}"
 def BUNDLE_PASSWD = "AltoQi12"
-
-// Configuracao do job, vem dos parametros da UI (se manual) ou de um perfil pre-definido
-def JOB_PROFILE = ""
-def CONFIG_SVN_REVISION = ""
-def CONFIG_SVN_BRANCH = ""
-def CONFIG_BUILD_TYPE = ""
-def CONFIG_TRANSLATION = ""
-def CONFIG_PROTECTION = ""
-def CONFIG_COTIRE = false
-def CONFIG_VLD = false
-def CONFIG_PDB = false
 
 // Variaveis de saida populadas nas etapas de configuracao e espelhamento do Pipeline
 def SVN_URL = ""
@@ -50,17 +31,6 @@ def BUNDLE_PATH_PDBS = ""
 pipeline {
   agent any
 
-  triggers {
-    // MINUTO HORA DIA_MES MES DIA_SEMANA
-
-    pollSCM('H/5 * * * *')
-
-    cron('''
-      20 3 * * *
-      30 3 * * 0
-    ''')
-  }
-
   parameters {
     string(name: "REVISAO_SVN", defaultValue: "HEAD", description: "Revisao do SVN a ser compilada")
     string(name: "BRANCH_SVN", defaultValue: "trunk", description: "Branch do SVN a ser compilada")
@@ -81,94 +51,12 @@ pipeline {
     stage('Configurar') {
       steps {
 
-        // Detecta o gatilho para definir o perfil de configuracao do job
-        script {
-          def gatilho = currentBuild.getBuildCauses()
-
-          def ehManual = gatilho.any {
-            it?._class?.contains('UserIdCause')
-          }
-
-          def ehSCM = gatilho.any {
-            it?._class?.contains('SCMTriggerCause')
-          }
-
-          def ehTimer = gatilho.any {
-            it?._class?.contains('TimerTriggerCause')
-          }
-
-          if (ehManual) {
-            JOB_PROFILE = "SOB_DEMANDA"
-          } else if (ehSCM) {
-            JOB_PROFILE = "RELEASE_CLOUD"
-          } else if (ehTimer) {
-            def hoje = java.time.ZonedDateTime.now(java.time.ZoneId.of("America/Sao_Paulo"))
-
-            if (hoje.dayOfWeek == java.time.DayOfWeek.SUNDAY) {
-              JOB_PROFILE = "RELEASE_VLD_CLOUD"
-            }
-            else {
-              JOB_PROFILE = "DEBUG_CLOUD"
-            }
-          }
-        }
-
-        // Define as configuracoes do job com base nos parametros ou no perfil pre-definido
-        script {
-          if (JOB_PROFILE == "SOB_DEMANDA") {
-            CONFIG_SVN_REVISION = params.REVISAO_SVN
-            CONFIG_SVN_BRANCH = params.BRANCH_SVN
-            CONFIG_BUILD_TYPE = params.TIPO_BUILD
-            CONFIG_TRANSLATION = params.TRADUCAO
-            CONFIG_PROTECTION = params.PROTECAO
-            CONFIG_COTIRE = params.COTIRE
-            CONFIG_VLD = params.VLD
-            CONFIG_PDB = params.PDB
-          } else if (JOB_PROFILE == "RELEASE_CLOUD") {
-            CONFIG_SVN_REVISION = "HEAD"
-            CONFIG_SVN_BRANCH = "trunk"
-            CONFIG_BUILD_TYPE = "RELEASE"
-            CONFIG_TRANSLATION = "DESABILITADA"
-            CONFIG_PROTECTION = "OAUTH"
-            CONFIG_COTIRE = true
-            CONFIG_VLD = false
-            CONFIG_PDB = false
-          } else if (JOB_PROFILE == "DEBUG_CLOUD") {
-            CONFIG_SVN_REVISION = "HEAD"
-            CONFIG_SVN_BRANCH = "trunk"
-            CONFIG_BUILD_TYPE = "DEBUG"
-            CONFIG_TRANSLATION = "DESABILITADA"
-            CONFIG_PROTECTION = "OAUTH"
-            CONFIG_COTIRE = true
-            CONFIG_VLD = false
-            CONFIG_PDB = false
-          } else if (JOB_PROFILE == "RELEASE_ESMX_CLOUD") {
-            CONFIG_SVN_REVISION = "HEAD"
-            CONFIG_SVN_BRANCH = "trunk"
-            CONFIG_BUILD_TYPE = "RELEASE"
-            CONFIG_TRANSLATION = "ES-MX"
-            CONFIG_PROTECTION = "OAUTH"
-            CONFIG_COTIRE = true
-            CONFIG_VLD = false
-            CONFIG_PDB = false
-          } else if (JOB_PROFILE == "RELEASE_VLD_CLOUD") {
-            CONFIG_SVN_REVISION = "HEAD"
-            CONFIG_SVN_BRANCH = "trunk"
-            CONFIG_BUILD_TYPE = "RELEASE"
-            CONFIG_TRANSLATION = "DESABILITADA"
-            CONFIG_PROTECTION = "OAUTH"
-            CONFIG_COTIRE = true
-            CONFIG_VLD = true
-            CONFIG_PDB = false
-          }
-        }
-
         // Popula dados do workspace com base nos parametros de SVN
         script {
-          def rota = CONFIG_SVN_BRANCH == "trunk" ? "trunk" : "branches/${CONFIG_SVN_BRANCH}"
+          def rota = params.BRANCH_SVN == "trunk" ? "trunk" : "branches/${params.BRANCH_SVN}"
           SVN_URL = "${SVN_BASE_URL}${rota}"
 
-          CHECKOUT_FOLDER = "${CHECKOUT_FOLDER_PREFIX}_${CONFIG_SVN_BRANCH}"
+          CHECKOUT_FOLDER = "${CHECKOUT_FOLDER_PREFIX}_${params.BRANCH_SVN}"
           CHECKOUT_PATH = "${env.WORKSPACE}\\${CHECKOUT_FOLDER}"
           SCRIPTS_PATH = "${CHECKOUT_PATH}\\${SCRIPTS_FOLDER}"
           APP_7ZA_PATH = "${CHECKOUT_PATH}\\${APP_7ZA_REL_PATH}"
@@ -176,7 +64,7 @@ pipeline {
 
         // Gera o comando de build com base nas opcoes selecionadas
         script {
-          if (CONFIG_BUILD_TYPE == "DEBUG") {
+          if (params.TIPO_BUILD == "DEBUG") {
             PYTHON_BUILD_SCRIPT_FLAGS += "-B=deb"
           } else {
             PYTHON_BUILD_SCRIPT_FLAGS += "-B=rel"
@@ -185,32 +73,32 @@ pipeline {
           PYTHON_BUILD_SCRIPT_FLAGS += " -V=22 -TS=143"
 
           PYTHON_BUILD_SCRIPT_FLAGS += " "
-          if (CONFIG_PROTECTION == "SL") {
+          if (params.PROTECAO == "SL") {
             PYTHON_BUILD_SCRIPT_FLAGS += "-SL"
-          } else if (CONFIG_PROTECTION == "DEMO") {
+          } else if (params.PROTECAO == "DEMO") {
             PYTHON_BUILD_SCRIPT_FLAGS += "-D"
-          } else if (CONFIG_PROTECTION == "RMS") {
+          } else if (params.PROTECAO == "RMS") {
             PYTHON_BUILD_SCRIPT_FLAGS += "-R"
           } else {
             PYTHON_BUILD_SCRIPT_FLAGS += "-O"
           }
 
-          if (CONFIG_TRANSLATION != "DESABILITADA") {
+          if (params.TRADUCAO != "DESABILITADA") {
             PYTHON_BUILD_SCRIPT_FLAGS += " -T -Lang="
-            if (CONFIG_TRANSLATION == "EN-US") {
+            if (params.TRADUCAO == "EN-US") {
               PYTHON_BUILD_SCRIPT_FLAGS += "en-US"
-            } else if (CONFIG_TRANSLATION == "ES-MX") {
+            } else if (params.TRADUCAO == "ES-MX") {
               PYTHON_BUILD_SCRIPT_FLAGS += "es-MX"
             } else {
               PYTHON_BUILD_SCRIPT_FLAGS += "pt-BR"
             }
           }
 
-          if (CONFIG_COTIRE) {
+          if (params.COTIRE) {
             PYTHON_BUILD_SCRIPT_FLAGS += " -C"
           }
 
-          if (CONFIG_VLD) {
+          if (params.VLD) {
             PYTHON_BUILD_SCRIPT_FLAGS += " -L"
           }
 
@@ -219,7 +107,7 @@ pipeline {
 
         // Monta nome da pasta a ser gerada pelo comando de build
         script {
-          if (CONFIG_BUILD_TYPE == "DEBUG") {
+          if (params.TIPO_BUILD == "DEBUG") {
             CMAKE_PROJECT_FOLDER += "deb"
           } else {
             CMAKE_PROJECT_FOLDER += "rel"
@@ -227,32 +115,32 @@ pipeline {
 
           CMAKE_PROJECT_FOLDER += "_vs22_msvc143"
 
-          if (CONFIG_PROTECTION == "SL") {
+          if (params.PROTECAO == "SL") {
             CMAKE_PROJECT_FOLDER += "_sl"
-          } else if (CONFIG_PROTECTION == "DEMO") {
+          } else if (params.PROTECAO == "DEMO") {
             CMAKE_PROJECT_FOLDER += "_demo"
-          } else if (CONFIG_PROTECTION == "RMS") {
+          } else if (params.PROTECAO == "RMS") {
             CMAKE_PROJECT_FOLDER += "_rms"
           } else {
             CMAKE_PROJECT_FOLDER += "_oauth"
           }
 
-          if (CONFIG_TRANSLATION != "DESABILITADA") {
+          if (params.TRADUCAO != "DESABILITADA") {
             CMAKE_PROJECT_FOLDER += "_tr"
           }
 
-          if (CONFIG_COTIRE) {
+          if (params.COTIRE) {
             CMAKE_PROJECT_FOLDER += "_cotire"
           }
 
-          if (CONFIG_VLD) {
+          if (params.VLD) {
             CMAKE_PROJECT_FOLDER += "_vld"
           }
         }
 
         // Monta nome da pasta do comando de instalacao do CMake
         script {
-          if (CONFIG_BUILD_TYPE == "DEBUG") {
+          if (params.TIPO_BUILD == "DEBUG") {
             CMAKE_INSTALL_FOLDER += "Db"
           } else {
             CMAKE_INSTALL_FOLDER += "Rel"
@@ -260,14 +148,14 @@ pipeline {
 
           CMAKE_INSTALL_FOLDER += "_OWL${OWL_VERSION}"
 
-          if (CONFIG_VLD) {
+          if (params.VLD) {
             CMAKE_INSTALL_FOLDER += "_VLD"
           }
 
-          if (CONFIG_PROTECTION != "DEMO") {
-            if (CONFIG_PROTECTION == "SL") {
+          if (params.PROTECAO != "DEMO") {
+            if (params.PROTECAO == "SL") {
               CMAKE_INSTALL_FOLDER += "_SL"
-            } else if (CONFIG_PROTECTION == "RMS") {
+            } else if (params.PROTECAO == "RMS") {
               CMAKE_INSTALL_FOLDER += "_RMS"
             } else {
               CMAKE_INSTALL_FOLDER += "_OAUTH"
@@ -276,15 +164,15 @@ pipeline {
 
           CMAKE_INSTALL_FOLDER += "_x64"
 
-          if (CONFIG_PROTECTION == "DEMO") {
+          if (params.PROTECAO == "DEMO") {
             CMAKE_INSTALL_FOLDER += "_Demo"
           }
 
-          if (CONFIG_COTIRE) {
+          if (params.COTIRE) {
             CMAKE_INSTALL_FOLDER += "_COTIRE"
           }
 
-          if (CONFIG_TRANSLATION != "DESABILITADA") {
+          if (params.TRADUCAO != "DESABILITADA") {
             CMAKE_INSTALL_FOLDER += "_TRA"
           }
 
@@ -294,8 +182,6 @@ pipeline {
           env.EXEOBJ = "${CMAKE_INSTALL_PREFIX}"
         }
 
-        echo CMAKE_INSTALL_PREFIX;
-
       }
     }
 
@@ -303,10 +189,10 @@ pipeline {
       steps {
 
         script {
-          bat "svn checkout -r ${CONFIG_SVN_REVISION} ${SVN_URL} ${CHECKOUT_FOLDER}"
+          bat "svn checkout -r ${params.REVISAO_SVN} ${SVN_URL} ${CHECKOUT_FOLDER}"
 
-          if (CONFIG_SVN_REVISION != "HEAD") {
-            SVN_REVISION = CONFIG_SVN_REVISION
+          if (params.REVISAO_SVN != "HEAD") {
+            SVN_REVISION = params.REVISAO_SVN
           } else {
             SVN_REVISION = bat(
               script: """
@@ -321,27 +207,27 @@ pipeline {
         script {
           BUNDLE_BASENAME += "${SVN_REVISION}"
 
-          if (CONFIG_SVN_BRANCH != "trunk") {
-            BUNDLE_BASENAME += "_${CONFIG_SVN_BRANCH}"
+          if (params.BRANCH_SVN != "trunk") {
+            BUNDLE_BASENAME += "_${params.BRANCH_SVN}"
           }
 
-          if (CONFIG_BUILD_TYPE == "DEBUG") {
+          if (params.TIPO_BUILD == "DEBUG") {
             BUNDLE_BASENAME += "_Debug"
           }
 
-          if (CONFIG_VLD) {
+          if (params.VLD) {
             BUNDLE_BASENAME += "_VLD"
           }
 
-          if (CONFIG_TRANSLATION != "DESABILITADA") {
+          if (params.TRADUCAO != "DESABILITADA") {
             BUNDLE_BASENAME += "_Traducao"
           }
 
-          if (CONFIG_PROTECTION == "SL") {
+          if (params.PROTECAO == "SL") {
             BUNDLE_BASENAME += "_SL"
-          } else if (CONFIG_PROTECTION == "DEMO") {
+          } else if (params.PROTECAO == "DEMO") {
             BUNDLE_BASENAME += "_Demo"
-          } else if (CONFIG_PROTECTION == "RMS") {
+          } else if (params.PROTECAO == "RMS") {
             BUNDLE_BASENAME += "_RMS"
           } else {
             BUNDLE_BASENAME += "_Cloud"
@@ -352,8 +238,6 @@ pipeline {
 
           BUNDLE_PATH_EXEOBJ = "${BUNDLE_OUT_DIR}\\${BUNDLE_NAME_EXEOBJ}"
           BUNDLE_PATH_PDBS = "${BUNDLE_OUT_DIR}\\${BUNDLE_NAME_PDBS}"
-
-          currentBuild.displayName = "Eberick_${BUNDLE_BASENAME}"
         }
 
       }
@@ -378,7 +262,7 @@ pipeline {
     //   }
 
     //   script {
-    //     if (CONFIG_COTIRE) {
+    //     if (params.COTIRE) {
     //       echo "Analise Cpps Isolados"
     //     }
     //   }
@@ -411,7 +295,7 @@ pipeline {
           def cmd = "${APP_7ZA_PATH} a -r -tzip -p${BUNDLE_PASSWD}"
 
           bat "${cmd} ${BUNDLE_PATH_EXEOBJ} ${CMAKE_INSTALL_PREFIX}\\*"
-          if (CONFIG_PDB) {
+          if (params.PDB) {
             bat "${cmd} ${BUNDLE_PATH_PDBS} ${CMAKE_PDB_OUTPUT_DIRECTORY}\\*"
           }
         }
