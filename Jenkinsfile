@@ -1,5 +1,8 @@
+import groovy.json.JsonOutput
+
 // Parametros de entrada que nao precisam ser configurados via UI, mudam raramente
 def SVN_BASE_URL = "https://svn.altoqi.com.br/svn/Eberick/"
+def SVN_URL_TEST_SCRIPTS = "https://svn.altoqi.com.br/svn/ScriptsTestes/trunk"
 def CHECKOUT_FOLDER_PREFIX = "eb"
 def SCRIPTS_FOLDER = "Scripts"
 def APP_7ZA_REL_PATH = "${SCRIPTS_FOLDER}\\Utils\\7za.exe"
@@ -9,6 +12,8 @@ def CMAKE_BINARY_DIR = "exeobj_cmake\\VC"
 def OWL_VERSION = "6.42"
 def BUNDLE_OUT_DIR = "D:\\jenkins\\jobs\\${env.JOB_NAME}\\builds\\${env.BUILD_NUMBER}"
 def BUNDLE_PASSWD = "AltoQi12"
+def TMP_FOLDER_TESTS_SCRIPTS = "_ScriptsTestes"
+def TMP_FOLDER_TESTS_ENVIRONMENT = "_Autoteste_local"
 
 // Variaveis de saida populadas nas etapas de configuracao e espelhamento do Pipeline
 def SVN_URL = ""
@@ -44,6 +49,10 @@ pipeline {
 
   environment {
     SERVER_PROTECAO = "http://aq000043:8080/"
+  }
+
+  options {
+    ansiColor("xterm")
   }
 
   stages {
@@ -304,11 +313,83 @@ pipeline {
       }
     }
 
-    // stage("Testar") {
-    //   steps {
-    //     echo "Testando"
-    //   }
-    // }
+    stage("Testar") {
+      steps {
+        dir("${SCRIPTS_PATH}\\${CMAKE_PROJECT_FOLDER}") {
+          catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+            bat "ctest --output-on-failure -V -E QiBuildingQt"
+          }
+        }
+
+        script {
+          def fitTestsRunner = "${CMAKE_INSTALL_PREFIX}\\EberickFitTest.exe"
+          def fitTestsBasePath = "${CHECKOUT_PATH}\\TestesFit"
+          def fitTestsInPath = "${fitTestsBasePath}\\Input"
+          def fitTestsOutPath = "${fitTestsBasePath}\\Output"
+
+          catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+            bat "${fitTestsRunner} ${fitTestsInPath} ${fitTestsOutPath}"
+          }
+
+          dir(fitTestsOutPath) {
+            deleteDir()
+          }
+        }
+
+        dir(SCRIPTS_PATH) {
+          script {
+            bat "svn checkout -r HEAD ${SVN_URL_TEST_SCRIPTS} ${TMP_FOLDER_TESTS_SCRIPTS}"
+
+            def configFilePath = "${TMP_FOLDER_TESTS_SCRIPTS}\\configs.json"
+            def cfg = [
+              programa: "Eberick",
+              ambiente: "${SCRIPTS_PATH}\\${TMP_FOLDER_TESTS_ENVIRONMENT}",
+              exeobj: CMAKE_INSTALL_PREFIX,
+              release: params.BRANCH_SVN,
+              apagar_testes: true
+            ]
+            def json = JsonOutput.toJson(cfg)
+            writeFile file: configFilePath, text: json
+
+            dir(TMP_FOLDER_TESTS_SCRIPTS) {
+              def smokeTest = "12-Teste_Build 01_Verificar_estabilidade 01_Todos_elementos"
+              bat "${PYTHON_COMMAND} mainCMD.py -T \"${smokeTest}\""
+              deleteDir()
+            }
+          }
+
+          script {
+            def files = findFiles(glob: "${TMP_FOLDER_TESTS_ENVIRONMENT}/Status/*")
+            boolean todosOK = true
+            boolean temGPF = false
+
+            for (file in files) {
+              if (!file.name.toLowerCase().endsWith(".ok")) {
+                todosOK = false
+
+                if (file.name.toLowerCase().endsWith(".gpf")) {
+                  temGPF = true
+                }
+              }
+            }
+
+            dir(TMP_FOLDER_TESTS_ENVIRONMENT) {
+              deleteDir()
+            }
+
+            if (temGPF) {
+              error("Build falhou, verificar smoke test com queda")
+            }
+            else if (!todosOK) {
+              unstable("Build instavel, verificar smoke test com problema")
+            }
+            else {
+              echo "Build gerada com sucesso, smoke test ok"
+            }
+          }
+        }
+      }
+    }
 
   }
 }
